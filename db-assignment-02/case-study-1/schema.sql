@@ -1,11 +1,13 @@
 -- =====================================================================
 -- CS-2005 Database Systems - Assignment 02 - Case Study 1
 -- Art Gallery Network "Picasso"  -  relational schema (DDL)
--- Mapping rules follow Chapter 9 slides (Steps 1, 4, 5, 6, 8A, 8C).
--- Tables are listed in dependency order (parents before children).
+-- Mapping follows Chapter 9: Step 1 (entities), 4 (1:N), 5 (M:N),
+-- 6 (multivalued), 8A (every specialization: superclass table + one table
+-- per subclass). Every rectangle in the EER diagram is a table here.
+-- Tables are listed parents-first.
 -- =====================================================================
 
--- Step 1 (regular entity) + composite pname -> fname, lname (Table 7.1)
+-- Step 1; composite pname -> fname, lname
 CREATE TABLE PAINTER (
     pid    INT         NOT NULL,
     fname  VARCHAR(30) NOT NULL,
@@ -20,7 +22,7 @@ CREATE TABLE MANAGER (
     CONSTRAINT pk_manager PRIMARY KEY (mid)
 );
 
--- Step 6: multivalued attribute contactno -> its own table
+-- Step 6: multivalued attribute contactno
 CREATE TABLE MANAGER_CONTACT (
     mid        INT         NOT NULL,
     contactno  VARCHAR(15) NOT NULL,
@@ -29,7 +31,7 @@ CREATE TABLE MANAGER_CONTACT (
         REFERENCES MANAGER (mid) ON DELETE CASCADE
 );
 
--- Step 1 + Step 4: MANAGES is 1:N, so the FK goes on the N side (GALLERY)
+-- Step 1 + Step 4 (MANAGES is 1:N, FK on the N side)
 CREATE TABLE GALLERY (
     gid       INT          NOT NULL,
     location  VARCHAR(100) NOT NULL,
@@ -38,45 +40,62 @@ CREATE TABLE GALLERY (
     CONSTRAINT fk_gallery_manager FOREIGN KEY (mid) REFERENCES MANAGER (mid)
 );
 
--- Step 1 + Step 4 (OFFERS) + Step 8C (disjoint, total specialization:
--- one table, one type attribute). BOOMOFFER / COOLOFFER live in this table.
+-- Step 1 + Step 4 (OFFERS). Superclass of BOOMOFFER / COOLOFFER.
 CREATE TABLE OFFER (
-    offerid          INT           NOT NULL,
-    offertitle       VARCHAR(60)   NOT NULL,
-    offerstartdate   DATE          NOT NULL,
-    offerexpirydate  DATE          NOT NULL,
-    offer_type       VARCHAR(4)    NOT NULL,         -- 8C type attribute
-    giftoffered      VARCHAR(60),                    -- BOOMOFFER only
-    offerdiscount    DECIMAL(5,2),                   -- COOLOFFER only (percent)
-    gid              INT           NOT NULL,         -- OFFERS (1,1)
+    offerid          INT         NOT NULL,
+    offertitle       VARCHAR(60) NOT NULL,
+    offerstartdate   DATE        NOT NULL,
+    offerexpirydate  DATE        NOT NULL,
+    gid              INT         NOT NULL,           -- OFFERS (1,1)
     CONSTRAINT pk_offer PRIMARY KEY (offerid),
     CONSTRAINT fk_offer_gallery FOREIGN KEY (gid) REFERENCES GALLERY (gid),
-    CONSTRAINT uq_offer_gallery_type UNIQUE (gid, offer_type),   -- max 1 of each type per gallery => (2,2)
-    CONSTRAINT ck_offer_type CHECK (offer_type IN ('BOOM', 'COOL')),
-    CONSTRAINT ck_offer_dates CHECK (offerexpirydate >= offerstartdate),
-    CONSTRAINT ck_offer_discount CHECK (offerdiscount IS NULL OR offerdiscount BETWEEN 0 AND 100),
-    CONSTRAINT ck_offer_subclass CHECK (
-           (offer_type = 'BOOM' AND giftoffered  IS NOT NULL AND offerdiscount IS NULL)
-        OR (offer_type = 'COOL' AND offerdiscount IS NOT NULL AND giftoffered  IS NULL))
+    CONSTRAINT ck_offer_dates CHECK (offerexpirydate >= offerstartdate)
 );
 
--- Step 1 + Step 4 (AVAILS) + Step 8C (disjoint, total specialization:
--- MEMBER / NON_MEMBER live in this table, told apart by customer_type).
+-- Step 8A subclasses of OFFER
+CREATE TABLE BOOMOFFER (
+    offerid      INT         NOT NULL,
+    giftoffered  VARCHAR(60) NOT NULL,
+    CONSTRAINT pk_boomoffer PRIMARY KEY (offerid),
+    CONSTRAINT fk_boomoffer_offer FOREIGN KEY (offerid)
+        REFERENCES OFFER (offerid) ON DELETE CASCADE
+);
+
+CREATE TABLE COOLOFFER (
+    offerid        INT          NOT NULL,
+    offerdiscount  DECIMAL(5,2) NOT NULL,            -- percent
+    CONSTRAINT pk_cooloffer PRIMARY KEY (offerid),
+    CONSTRAINT fk_cooloffer_offer FOREIGN KEY (offerid)
+        REFERENCES OFFER (offerid) ON DELETE CASCADE,
+    CONSTRAINT ck_cooloffer_discount CHECK (offerdiscount BETWEEN 0 AND 100)
+);
+
+-- Step 1 + Step 4 (AVAILS). Superclass of MEMBER / NON_MEMBER.
 CREATE TABLE CUSTOMER (
-    cid            INT         NOT NULL,
-    name           VARCHAR(60) NOT NULL,
-    customer_type  VARCHAR(10) NOT NULL,             -- 8C type attribute
-    memno          INT,                              -- MEMBER only
-    visitno        INT,                              -- MEMBER only
-    offerid        INT         NOT NULL,             -- AVAILS (1,1)
+    cid      INT         NOT NULL,
+    name     VARCHAR(60) NOT NULL,
+    offerid  INT         NOT NULL,                   -- AVAILS (1,1)
     CONSTRAINT pk_customer PRIMARY KEY (cid),
-    CONSTRAINT uq_customer_memno UNIQUE (memno),
-    CONSTRAINT fk_customer_offer FOREIGN KEY (offerid) REFERENCES OFFER (offerid),
-    CONSTRAINT ck_customer_type CHECK (customer_type IN ('MEMBER', 'NON_MEMBER')),
-    CONSTRAINT ck_customer_subclass CHECK (
-           (customer_type = 'MEMBER'     AND memno IS NOT NULL AND visitno IS NOT NULL)
-        OR (customer_type = 'NON_MEMBER' AND memno IS NULL     AND visitno IS NULL)),
-    CONSTRAINT ck_customer_visitno CHECK (visitno IS NULL OR visitno >= 0)
+    CONSTRAINT fk_customer_offer FOREIGN KEY (offerid) REFERENCES OFFER (offerid)
+);
+
+-- Step 8A subclasses of CUSTOMER
+CREATE TABLE MEMBER (
+    cid      INT NOT NULL,
+    memno    INT NOT NULL,
+    visitno  INT NOT NULL,
+    CONSTRAINT pk_member PRIMARY KEY (cid),
+    CONSTRAINT uq_member_memno UNIQUE (memno),
+    CONSTRAINT fk_member_customer FOREIGN KEY (cid)
+        REFERENCES CUSTOMER (cid) ON DELETE CASCADE,
+    CONSTRAINT ck_member_visitno CHECK (visitno >= 0)
+);
+
+CREATE TABLE NON_MEMBER (
+    cid  INT NOT NULL,
+    CONSTRAINT pk_non_member PRIMARY KEY (cid),
+    CONSTRAINT fk_non_member_customer FOREIGN KEY (cid)
+        REFERENCES CUSTOMER (cid) ON DELETE CASCADE
 );
 
 -- Step 1 + Step 4 (PAINTS, EXHIBITED_IN, PURCHASES). exhibition_date is the
@@ -94,8 +113,7 @@ CREATE TABLE PAINTING (
     CONSTRAINT fk_painting_customer FOREIGN KEY (cid) REFERENCES CUSTOMER (cid)
 );
 
--- Step 8A (overlapping, total specialization: superclass table + one table
--- per subclass, each sharing the superclass key)
+-- Step 8A subclasses of PAINTING
 CREATE TABLE WATERCOLOUR (
     pnid  INT         NOT NULL,
     x     VARCHAR(50) NOT NULL,
@@ -120,8 +138,7 @@ CREATE TABLE OTHER_PAINTING (
         REFERENCES PAINTING (pnid) ON DELETE CASCADE
 );
 
--- Step 5: VISITS is the only M:N relationship -> relationship table whose
--- primary key is the combination of the two foreign keys
+-- Step 5: VISITS is the only M:N relationship
 CREATE TABLE VISITS (
     gid  INT NOT NULL,
     cid  INT NOT NULL,
@@ -131,15 +148,25 @@ CREATE TABLE VISITS (
 );
 
 -- =====================================================================
--- Rules that plain DDL cannot declare (checked by trigger / application):
+-- Rules plain DDL cannot declare. Each query must return 0 rows; they are
+-- meant to be enforced by triggers / transaction logic.
 -- =====================================================================
--- C1  A NON_MEMBER may avail only a BOOM offer.  This query must return 0 rows:
---     SELECT c.cid
---     FROM   CUSTOMER c JOIN OFFER o ON o.offerid = c.offerid
---     WHERE  c.customer_type = 'NON_MEMBER' AND o.offer_type <> 'BOOM';
---
--- C2  Minimum participation of 1 on the "one" side of a 1:N relationship
---     (painter has >= 1 painting, gallery has >= 1 painting, manager manages
---     >= 1 gallery, customer visited >= 1 gallery, gallery has exactly 2 offers)
---     and "every painting is in >= 1 category table" are enforced by
---     transaction logic / deferred triggers.
+-- C1  A NON_MEMBER may avail only a BOOM offer
+--     SELECT n.cid FROM NON_MEMBER n JOIN CUSTOMER c ON c.cid = n.cid
+--     JOIN COOLOFFER co ON co.offerid = c.offerid;
+-- C2  Disjoint: no customer in both MEMBER and NON_MEMBER
+--     SELECT m.cid FROM MEMBER m JOIN NON_MEMBER n ON n.cid = m.cid;
+-- C3  Total: every customer is in MEMBER or NON_MEMBER
+--     SELECT c.cid FROM CUSTOMER c
+--     WHERE c.cid NOT IN (SELECT cid FROM MEMBER) AND c.cid NOT IN (SELECT cid FROM NON_MEMBER);
+-- C4  Disjoint + total for OFFER: no offer in both BOOMOFFER and COOLOFFER,
+--     none in neither (same pattern as C2 and C3)
+-- C5  Total (overlapping allowed) for PAINTING: every painting is in at least
+--     one of WATERCOLOUR, OILS, OTHER_PAINTING
+-- C6  Gallery has exactly one BoomOffer and one CoolOffer (2,2)
+--     SELECT g.gid FROM GALLERY g
+--     WHERE (SELECT COUNT(*) FROM OFFER o JOIN BOOMOFFER b ON b.offerid = o.offerid WHERE o.gid = g.gid) <> 1
+--        OR (SELECT COUNT(*) FROM OFFER o JOIN COOLOFFER c ON c.offerid = o.offerid WHERE o.gid = g.gid) <> 1;
+-- C7  Minimum 1 on the "one" side of 1:N / M:N: painter has >= 1 painting,
+--     gallery has >= 1 painting, manager manages >= 1 gallery,
+--     customer has visited >= 1 gallery
